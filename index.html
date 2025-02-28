@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexTrade - 암호화폐 거래소</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        header { position: sticky; top: 0; z-index: 1000; }
+        .table th, .table td { vertical-align: middle; padding: 8px; }
+        #coin-search { max-width: 300px; }
+        #chart-container { width: 100%; height: 400px; }
+        #analysis p { margin: 5px 0; font-size: clamp(0.9rem, 2vw, 1rem); }
+        #analysis h4 { font-size: clamp(1rem, 2.5vw, 1.2rem); margin-bottom: 10px; }
+        #prediction-text { margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #ddd; }
+        #prediction-text strong { color: #007bff; }
+        #prediction-text em { color: #6c757d; font-style: italic; }
+        #time-interval { margin-bottom: 10px; }
+        #news-feed { margin-top: 10px; max-height: 200px; overflow-y: auto; border-top: 1px solid #ddd; padding-top: 10px; }
+        #news-input { margin-top: 10px; }
+        .modal-xl { max-width: 95vw; }
+        .modal-body { max-height: 80vh; overflow-y: auto; }
+        .error-message { color: red; text-align: center; margin-top: 10px; }
+        .coin-image { width: 24px; height: 24px; vertical-align: middle; }
+        .pagination { margin-top: 20px; display: flex; justify-content: center; gap: 10px; }
+        @media (max-width: 992px) { #coin-search { width: 50%; } #chart-container { height: 350px; } .table { font-size: 0.95rem; } }
+        @media (max-width: 768px) { #coin-search { width: 70%; } #chart-container { height: 300px; } .modal-dialog { margin: 0; max-width: 100%; } .table { font-size: 0.9rem; } }
+        @media (max-width: 576px) { header { padding: 10px; } h1 { font-size: 1.5rem; } #coin-search { width: 100%; margin-top: 10px; } .table { font-size: 0.85rem; } .table td:nth-child(5) { display: none; } #chart-container { height: 250px; } #analysis .col-md-4 { flex: 0 0 100%; max-width: 100%; margin-bottom: 15px; } }
+    </style>
+</head>
+<body>
+    <header class="bg-dark text-white py-3">
+        <div class="container d-flex flex-wrap justify-content-between align-items-center">
+            <h1>NexTrade</h1>
+            <input type="text" id="coin-search" class="form-control" placeholder="코인 검색...">
+        </div>
+    </header>
+
+    <main class="container my-4">
+        <section id="coin-table" class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th>코인</th>
+                        <th>가격 (USD)</th>
+                        <th>24시간 변동률</th>
+                        <th>거래량</th>
+                        <th>분석</th>
+                    </tr>
+                </thead>
+                <tbody id="coin-list"></tbody>
+            </table>
+            <div id="coin-error" class="error-message"></div>
+            <div class="pagination">
+                <button id="prev-page" class="btn btn-secondary" disabled>이전</button>
+                <span id="page-number">1</span>
+                <button id="next-page" class="btn btn-secondary">다음</button>
+            </div>
+        </section>
+
+        <div class="modal fade" id="analysisModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="selected-coin"></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <select id="time-interval" class="form-select mb-3">
+                            <option value="1m">1분</option>
+                            <option value="5m">5분</option>
+                            <option value="1h">1시간</option>
+                        </select>
+                        <div id="chart-container" class="mb-4">
+                            <canvas id="candle-chart"></canvas>
+                        </div>
+                        <div id="analysis" class="row">
+                            <div class="col-md-4">
+                                <h4>실시간 데이터</h4>
+                                <p>현재가: <span id="current-price"></span></p>
+                                <p>24시간 변동률: <span id="price-change"></span></p>
+                            </div>
+                            <div class="col-md-4">
+                                <h4>예측</h4>
+                                <p>최고가 예측: <span id="high-prediction"></span></p>
+                                <p>최저가 예측: <span id="low-prediction"></span></p>
+                            </div>
+                            <div class="col-md-4">
+                                <h4>기술적 분석</h4>
+                                <p>RSI: <span id="rsi"></span></p>
+                                <p>MACD: <span id="macd"></span></p>
+                                <p>변동성 (단기/장기): <span id="volatility"></span></p>
+                            </div>
+                        </div>
+                        <div id="prediction-text"></div>
+                        <div id="news-feed"></div>
+                        <div id="news-input" class="mt-3">
+                            <input type="text" id="news-title" class="form-control mb-2" placeholder="뉴스 제목 입력">
+                            <input type="url" id="news-url" class="form-control mb-2" placeholder="뉴스 URL 입력">
+                            <button id="add-news" class="btn btn-primary">뉴스 추가</button>
+                        </div>
+                        <!-- Cohere AI 추가 -->
+                        <div id="ai-assistant" class="mt-3">
+                            <button id="ai-ask-btn" class="btn btn-info">AI에게 물어보기</button>
+                            <div id="ai-response" class="alert alert-info mt-3" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-dark text-white py-3 mt-4">
+        <div class="container text-center">
+            <p>© 2025 NexTrade</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script>
+        Chart.register(
+            Chart.BarController,
+            Chart.LineController,
+            Chart.PointElement,
+            Chart.LineElement,
+            Chart.BarElement,
+            Chart.LinearScale,
+            Chart.Tooltip,
+            Chart.Legend
+        );
+
+        // Cohere AI API 키 (실제 키로 교체 필요)
+        const COHERE_API_KEY = 'YOUR_COHERE_API_KEY_HERE';
+
+        // Cohere AI 검색 함수
+        async function askCohere(query, context = '') {
+            try {
+                const response = await fetch('https://api.cohere.ai/v1/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${COHERE_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'command-xlarge',
+                        prompt: `${context}\n암호화폐 관련 질문에 한국어로 답변해주세요: "${query}"`,
+                        max_tokens: 150,
+                        temperature: 0.7
+                    })
+                });
+                if (!response.ok) throw new Error('Cohere API 호출 실패');
+                const data = await response.json();
+                return data.generations[0].text.trim();
+            } catch (error) {
+                console.error('Cohere AI 오류:', error);
+                return '죄송합니다. 답변을 생성할 수 없습니다.';
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const coinList = document.getElementById("coin-list");
+            const coinError = document.getElementById("coin-error");
+            const searchInput = document.getElementById("coin-search");
+            const prevPageBtn = document.getElementById("prev-page");
+            const nextPageBtn = document.getElementById("next-page");
+            const pageNumberSpan = document.getElementById("page-number");
+            let candleChart;
+            let candlestickData = [];
+            let volumeData = [];
+            const analysisModal = new bootstrap.Modal(document.getElementById("analysisModal"));
+            let updateInterval;
+            let customNews = [];
+            let ws;
+            const defaultImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAACBjSFJNAAB6JQAAgIMAAPn/AABOAAAHUwAADr4AAA6mAAADqYAAAcXAAAACAAAAAWJLR0QAiAUdSAAAAAlwSFlzAAAOxAAADsQBlSsOGwAAAKBJREFUOI3t0rENAjEQBdEfllENoGdoBLQCVkAXsAJawA5oBXQBF7ACOsAOsAMawR3Y2RksZ3fGGWbn++9xJkmwZJslWZavj8sG8N0E+NZk2WBNllmSZZnLBuAbEfjdBNjWYtkA3E2AbU2WDcDdBNjWZNkA3E2AbU2WDcDdBNjWZNkA3E2AbfkH8LeTZZNgtwGwtVk2AHcT/gD8z3qA1iUunAAAAABJRU5ErkJggg==";
+            let currentPage = 1;
+            let allCoins = [];
+            const coinsPerPage = 250;
+
+            async function fetchWithRetry(url, retries = 3, delay = 1000) {
+                for (let i = 0; i < retries; i++) {
+                    try {
+                        const response = await fetch(url);
+                        if (response.status === 429 || response.status === 403) {
+                            console.warn(`${response.status} 오류 발생, 재시도 ${i + 1}/${retries}`);
+                            await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+                            continue;
+                        }
+                        if (!response.ok) throw new Error(`HTTP 오류: ${response.status}`);
+                        return response;
+                    } catch (error) {
+                        if (i === retries - 1) {
+                            console.error(`요청 실패 (${url}):`, error);
+                            return null;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+                    }
+                }
+            }
+
+            async function fetchAllCoins(page = 1) {
+                try {
+                    const coinsResponse = await fetchWithRetry(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${coinsPerPage}&page=${page}&sparkline=false`);
+                    const piCoinResponse = await fetchWithRetry(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=pi-network`);
+                    const coins = coinsResponse ? await coinsResponse.json() : [];
+                    const piCoin = piCoinResponse && piCoinResponse.ok ? (await piCoinResponse.json())[0] : null;
+
+                    if (coins.length > 0 || piCoin) {
+                        allCoins = coins.map(coin => ({
+                            id: coin.id,
+                            symbol: coin.symbol.toLowerCase(),
+                            name: coin.name,
+                            current_price: coin.current_price,
+                            price_change_percentage_24h: coin.price_change_percentage_24h,
+                            total_volume: coin.total_volume,
+                            image: coin.image
+                        }));
+
+                        if (piCoin && !allCoins.some(coin => coin.id === piCoin.id)) {
+                            allCoins.unshift({
+                                id: piCoin.id,
+                                symbol: piCoin.symbol.toLowerCase(),
+                                name: piCoin.name,
+                                current_price: piCoin.current_price,
+                                price_change_percentage_24h: piCoin.price_change_percentage_24h,
+                                total_volume: piCoin.total_volume,
+                                image: piCoin.image
+                            });
+                        }
+
+                        displayCoins(allCoins);
+                        coinError.textContent = "";
+                        pageNumberSpan.textContent = page;
+                        prevPageBtn.disabled = page === 1;
+                        nextPageBtn.disabled = coins.length < coinsPerPage;
+                        return allCoins;
+                    } else {
+                        throw new Error("코인 데이터를 가져오지 못함");
+                    }
+                } catch (error) {
+                    console.error("코인 목록 오류:", error);
+                    coinError.textContent = "코인 목록을 불러오지 못했습니다. 로컬 서버에서 실행하세요!";
+                    return [];
+                }
+            }
+
+            function displayCoins(coins) {
+                coinList.innerHTML = "";
+                coins.forEach((coin, index) => {
+                    const row = document.createElement("tr");
+                    const priceChange = coin.price_change_percentage_24h != null ? coin.price_change_percentage_24h.toFixed(2) + "%" : "N/A";
+                    row.innerHTML = `
+                        <td>${(currentPage - 1) * coinsPerPage + index + 1}</td>
+                        <td><img src="${coin.image}" class="coin-image" onerror="this.src='${defaultImage}'"> ${coin.name} (${coin.symbol.toUpperCase()})</td>
+                        <td>$${coin.current_price.toLocaleString()}</td>
+                        <td class="${coin.price_change_percentage_24h >= 0 ? 'text-success' : 'text-danger'}">${priceChange}</td>
+                        <td>${coin.total_volume.toLocaleString()}</td>
+                        <td><button class="btn btn-primary btn-sm" onclick="showAnalysis('${coin.id}', '${coin.symbol}')">분석</button></td>
+                    `;
+                    coinList.appendChild(row);
+                });
+            }
+
+            async function fetchNews(coinSymbol) {
+                try {
+                    const rssResponse = await fetchWithRetry(`https://api.rss2json.com/v1/api.json?rss_url=https://coindesk.com/arc/outboundfeeds/rss/?outputType=xml`);
+                    if (!rssResponse || !rssResponse.ok) {
+                        throw new Error("RSS 응답 오류");
+                    }
+                    const rssData = await rssResponse.json();
+                    const newsFeed = document.getElementById("news-feed");
+                    newsFeed.innerHTML = "<h6>최신 뉴스</h6>";
+                    const filteredNews = rssData.items.filter(item => 
+                        item.title.toLowerCase().includes(coinSymbol.toLowerCase()) || 
+                        item.content.toLowerCase().includes(coinSymbol.toLowerCase())
+                    ).slice(0, 3);
+                    if (filteredNews.length > 0) {
+                        filteredNews.forEach(post => {
+                            newsFeed.innerHTML += `<p><a href="${post.link}" target="_blank">${post.title}</a> (${new Date(post.pubDate).toLocaleTimeString()})</p>`;
+                        });
+                    } else {
+                        newsFeed.innerHTML += "<p>관련 뉴스 없음</p>";
+                    }
+                    customNews.forEach(post => {
+                        newsFeed.innerHTML += `<p><a href="${post.url}" target="_blank">${post.title}</a> (${new Date(post.date).toLocaleTimeString()})</p>`;
+                    });
+                } catch (error) {
+                    console.error("RSS 뉴스 오류:", error);
+                    document.getElementById("news-feed").innerHTML = "<p>뉴스 데이터를 가져올 수 없습니다.</p>";
+                }
+            }
+
+            window.showAnalysis = async function(coinId, symbol) {
+                if (ws) {
+                    ws.close();
+                    ws = null;
+                }
+                if (updateInterval) {
+                    clearInterval(updateInterval);
+                    updateInterval = null;
+                }
+                candlestickData = [];
+                volumeData = [];
+                document.getElementById("selected-coin").textContent = `${symbol.toUpperCase()} 분석`;
+                analysisModal.show();
+
+                const timeInterval = document.getElementById("time-interval").value;
+                const limit = timeInterval === "1h" ? 24 : timeInterval === "5m" ? 288 : 1440;
+
+                try {
+                    let historicalResponse;
+                    if (coinId !== "pi-network") { // Pi 코인은 Binance에 없으므로 제외
+                        historicalResponse = await fetchWithRetry(
+                            `https://api.binance.com/api/v3/klines?symbol=${symbol.toUpperCase()}USDT&interval=${timeInterval}&limit=${limit}`
+                        );
+                    }
+
+                    if (historicalResponse) {
+                        const historical = await historicalResponse.json();
+                        candlestickData = historical.map(([time, open, high, low, close, volume]) => ({
+                            x: parseInt(time),
+                            y: parseFloat(close),
+                            volume: parseFloat(volume)
+                        }));
+
+                        ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}usdt@kline_${timeInterval}`);
+                        ws.onmessage = (event) => {
+                            const data = JSON.parse(event.data);
+                            const kline = data.k;
+                            if (kline.x) {
+                                const newCandle = {
+                                    x: parseInt(kline.t),
+                                    y: parseFloat(kline.c),
+                                    volume: parseFloat(kline.v)
+                                };
+                                candlestickData.push(newCandle);
+                                if (candlestickData.length > limit) candlestickData.shift();
+                            }
+                        };
+                        ws.onerror = () => console.error("WebSocket 오류");
+
+                        updateInterval = setInterval(() => {
+                            updateCandleChart(candlestickData);
+                            analyzeData(candlestickData);
+                        }, 5000);
+                    } else {
+                        throw new Error("Binance 상장 아님");
+                    }
+                } catch (error) {
+                    console.error("Binance 오류:", error);
+                    try {
+                        const okxResponse = await fetchWithRetry(
+                            `https://www.okx.com/api/v5/market/candles?instId=${symbol.toUpperCase()}-USDT&bar=${timeInterval === "1m" ? "1m" : timeInterval === "5m" ? "5m" : "1H"}&limit=${limit}`
+                        );
+                        if (okxResponse) {
+                            const okxData = await okxResponse.json();
+                            if (okxData.code === "0" && okxData.data) {
+                                candlestickData = okxData.data.map(([time, open, high, low, close, volume]) => ({
+                                    x: parseInt(time),
+                                    y: parseFloat(close),
+                                    volume: parseFloat(volume)
+                                })).reverse();
+                                updateInterval = setInterval(() => {
+                                    updateCandleChart(candlestickData);
+                                    analyzeData(candlestickData);
+                                }, 5000);
+                            } else {
+                                throw new Error("OKX 상장 아님");
+                            }
+                        }
+                    } catch (okxError) {
+                        console.error("OKX 오류:", okxError);
+                        document.getElementById("selected-coin").textContent += " (데이터 오류)";
+                        document.getElementById("chart-container").innerHTML = "<p>차트 데이터를 가져올 수 없습니다. 이 코인은 Binance나 OKX에 상장되어 있지 않습니다.</p>";
+                        document.getElementById("analysis").innerHTML = "<p>분석 데이터를 가져올 수 없습니다.</p>";
+                        document.getElementById("prediction-text").innerHTML = "<p>예측 데이터를 생성할 수 없습니다.</p>";
+                        fetchNews(symbol);
+                        // Cohere AI로 기본 정보 제공
+                        const aiResponseDiv = document.getElementById("ai-response");
+                        aiResponseDiv.style.display = 'block';
+                        aiResponseDiv.textContent = "Pi 코인은 현재 주요 거래소에 상장되어 있지 않습니다. 추가 정보를 원하시면 'AI에게 물어보기'를 사용하세요.";
+                        return;
+                    }
+                }
+
+                if (candlestickData.length > 0) {
+                    updateCandleChart(candlestickData);
+                    analyzeData(candlestickData);
+                    fetchNews(symbol);
+                }
+
+                // Cohere AI 컨텍스트 기반 질문 처리
+                const askWithContext = async (query) => {
+                    const context = `
+                        코인: ${symbol.toUpperCase()}
+                        현재가: $${document.getElementById('current-price').textContent || 'N/A'}
+                        RSI: ${document.getElementById('rsi').textContent || 'N/A'}
+                        MACD: ${document.getElementById('macd').textContent || 'N/A'}
+                        변동성: ${document.getElementById('volatility').textContent || 'N/A'}
+                    `;
+                    return await askCohere(query, context);
+                };
+
+                // AI 버튼 이벤트 처리
+                const aiAskBtn = document.getElementById('ai-ask-btn');
+                const aiResponseDiv = document.getElementById('ai-response');
+                aiAskBtn.addEventListener('click', async () => {
+                    const query = prompt('코인에 대해 궁금한 점을 입력하세요:');
+                    if (query) {
+                        aiResponseDiv.style.display = 'block';
+                        aiResponseDiv.textContent = '답변을 생성 중입니다...';
+                        const answer = await askWithContext(query);
+                        aiResponseDiv.textContent = answer;
+                    }
+                });
+
+                document.getElementById("time-interval").addEventListener("change", () => window.showAnalysis(coinId, symbol));
+                document.getElementById("add-news").addEventListener("click", () => {
+                    const title = document.getElementById("news-title").value;
+                    const url = document.getElementById("news-url").value;
+                    if (title && url) {
+                        customNews.push({ title, url, date: new Date().toISOString() });
+                        fetchNews(symbol);
+                        document.getElementById("news-title").value = "";
+                        document.getElementById("news-url").value = "";
+                    }
+                });
+            };
+
+            function updateCandleChart(data) {
+                const ctx = document.getElementById("candle-chart").getContext("2d");
+                if (candleChart) candleChart.destroy();
+
+                const latestPrice = data[data.length - 1]?.y || 0;
+                const highPrediction = calculateDailyHighPrediction(data);
+                const predictionLine = data.map(d => ({
+                    x: d.x,
+                    y: highPrediction
+                }));
+
+                candleChart = new Chart(ctx, {
+                    type: "line",
+                    data: {
+                        datasets: [
+                            {
+                                label: "가격 차트",
+                                data: data,
+                                borderColor: "blue",
+                                fill: false,
+                                tension: 0.1,
+                                pointRadius: 0,
+                                pointHitRadius: 5
+                            },
+                            {
+                                label: "오늘 최고가 예측",
+                                data: predictionLine,
+                                borderColor: "red",
+                                borderDash: [5, 5],
+                                fill: false,
+                                pointRadius: 0,
+                                pointHitRadius: 0
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: "linear",
+                                title: { display: true, text: "시간 (밀리초)" },
+                                ticks: {
+                                    callback: function(value) {
+                                        return new Date(value).toLocaleTimeString();
+                                    }
+                                }
+                            },
+                            y: {
+                                title: { display: true, text: "가격 (USD)" }
+                            }
+                        }
+                    }
+                });
+            }
+
+            function analyzeData(data) {
+                const prices = data.map(d => d.y);
+                const volumes = data.map(d => d.volume);
+                const latestPrice = prices[prices.length - 1] || 0;
+                document.getElementById("current-price").textContent = `$${latestPrice.toLocaleString()}`;
+
+                const highPrediction = Math.max(...prices) * 1.05 || 0;
+                const lowPrediction = Math.min(...prices) * 0.95 || 0;
+                document.getElementById("high-prediction").textContent = `$${highPrediction.toFixed(2)}`;
+                document.getElementById("low-prediction").textContent = `$${lowPrediction.toFixed(2)}`;
+
+                const shortTermVolatility = calculateVolatility(prices.slice(-20));
+                const longTermVolatility = calculateAnnualizedVolatility(prices.slice(-720));
+                document.getElementById("volatility").textContent = `${shortTermVolatility.toFixed(2)}% / ${longTermVolatility.toFixed(2)}%`;
+
+                const rsi = calculateRSI(prices.slice(-14));
+                document.getElementById("rsi").textContent = rsi.toFixed(2);
+
+                const macd = calculateMACD(prices);
+                document.getElementById("macd").textContent = `${macd.macd.toFixed(2)} (Signal: ${macd.signal.toFixed(2)})`;
+
+                const volumeChange = calculateVolumeChange(volumes);
+                const bollinger = calculateBollingerBands(prices);
+                const dailyHighPrediction = calculateDailyHighPrediction(data);
+                const trend = rsi > 50 || macd.macd > macd.signal ? "상승" : "하락";
+                const newsSentimentScore = calculateNewsSentiment();
+                const sentimentText = newsSentimentScore > 0 ? "긍정" : newsSentimentScore < 0 ? "부정" : "중립";
+                const priceChange24h = data.length > 1 ? ((latestPrice - data[0].y) / data[0].y * 100).toFixed(2) + "%" : "N/A";
+                document.getElementById("price-change").textContent = priceChange24h;
+
+                let beginnerExplanation = "<h6>쉽게 이해하는 분석</h6>";
+                beginnerExplanation += `<p><strong>1. 지금 이 코인의 상태는 어떤가요?</strong><br>현재 가격은 $${latestPrice.toLocaleString()}이고, 지난 24시간 동안 ${priceChange24h}만큼 ${priceChange24h.includes("-") ? "내려갔어요" : "올라갔어요"}. 즉, 최근 하루 동안 ${priceChange24h.includes("-") ? "조금 약세를 보였네요." : "강세를 보였어요!"}</p>`;
+                beginnerExplanation += `<p><strong>2. 가격이 얼마나 흔들리나요? (변동성)</strong><br>최근 20분 동안 변동성은 ${shortTermVolatility.toFixed(2)}%예요. ${shortTermVolatility > 10 ? "이건 가격이 꽤 많이 오르내리고 있다는 뜻이에요. 조심스럽게 접근해야 할 수 있어요!" : "가격이 비교적 안정적이네요. 큰 위험 없이 지켜볼 수 있을 거예요."} 장기적으로 보면 (30일 기준) 변동성은 ${longTermVolatility.toFixed(2)}%로, 시장이 얼마나 불안정한지 보여줍니다.</p>`;
+                beginnerExplanation += `<p><strong>3. 지금 살 때인가요, 팔 때인가요? (RSI)</strong><br>RSI는 ${rsi.toFixed(2)}예요. ${rsi > 70 ? "70을 넘었으니 사람들이 많이 사서 비쌀 수 있어요. 팔까 고민해볼 때예요!" : rsi < 30 ? "30 아래라 많이 내려갔어요. 살 기회가 될 수 있겠네요!" : "30~70 사이로 지금은 평범한 상태예요. 급하게 결정할 필요는 없어요."}</p>`;
+                beginnerExplanation += `<p><strong>4. 앞으로 오를까요, 내릴까요? (MACD)</strong><br>MACD는 ${macd.macd.toFixed(2)}이고 신호선은 ${macd.signal.toFixed(2)}예요. ${macd.macd > macd.signal ? "MACD가 신호선을 넘었으니 앞으로 가격이 오를 가능성이 높아 보여요!" : "MACD가 신호선 아래라 가격이 내려갈 수 있겠네요. 조금 더 지켜보세요."}</p>`;
+                beginnerExplanation += `<p><strong>5. 지금 가격이 비싼가요, 싼가요? (볼린저 밴드)</strong><br>볼린저 밴드는 가격 범위를 보여줘요. 현재 가격은 상단이 $${bollinger.upper.toFixed(2)}, 중간이 $${bollinger.middle.toFixed(2)}, 하단이 $${bollinger.lower.toFixed(2)}예요. ${latestPrice > bollinger.upper ? "상단을 넘었으니 비싸게 사는 걸 수 있어요!" : latestPrice < bollinger.lower ? "하단 아래라 싸게 살 기회일지도 몰라요!" : "중간쯤이라 적당한 가격이에요."}</p>`;
+                beginnerExplanation += `<p><strong>6. 뉴스는 어떤가요?</strong><br>최근 뉴스는 ${sentimentText}적인 분위기예요. ${sentimentText === "긍정" ? "좋은 소식이 많아서 투자자들의 기대가 높아질 수 있어요!" : sentimentText === "부정" ? "나쁜 소식이 있어서 투자자들이 걱정할 수 있어요." : "큰 변화가 없는 중립적인 소식이에요."}</p>`;
+                beginnerExplanation += `<p><strong>7. 이 코인은 앞으로 어떻게 될까요?</strong><br>지금 추세는 ${trend}이에요. 오늘 최대 $${dailyHighPrediction.toLocaleString()}까지 갈 수 있을 거예요. ${trend === "상승" ? "오를 가능성이 높으니 관심 가져볼 만해요!" : "내릴 수 있으니 조금 더 지켜보는 게 좋겠어요."}</p>`;
+
+                document.getElementById("prediction-text").innerHTML = `
+                    <h5>오늘 가격 예측 (2025년 2월 28일 기준)</h5>
+                    <p><strong>현재 가격:</strong> $${latestPrice.toLocaleString()}</p>
+                    <p><strong>24시간 변동률:</strong> ${priceChange24h}</p>
+                    <p><strong>단기 변동성 (최근 20분):</strong> ${shortTermVolatility.toFixed(2)}%</p>
+                    <p><strong>장기 변동성 (30일 연율):</strong> ${longTermVolatility.toFixed(2)}%</p>
+                    <p><strong>거래량 변화율 (최근 1일):</strong> ${volumeChange.toFixed(2)}%</p>
+                    <p><strong>RSI (14분):</strong> ${rsi.toFixed(2)}</p>
+                    <p><strong>MACD:</strong> ${macd.macd.toFixed(2)} vs Signal ${macd.signal.toFixed(2)}</p>
+                    <p><strong>볼린저 밴드:</strong> 상단 $${bollinger.upper.toFixed(2)}, 중간 $${bollinger.middle.toFixed(2)}, 하단 $${bollinger.lower.toFixed(2)}</p>
+                    <p><strong>뉴스 감성:</strong> ${sentimentText}</p>
+                    <p><strong>예측 트렌드:</strong> ${trend}</p>
+                    <p><strong>오늘 최대 예상 가격:</strong> $${dailyHighPrediction.toLocaleString()}</p>
+                    ${beginnerExplanation}
+                `;
+            }
+
+            function calculateVolatility(prices) {
+                const mean = prices.reduce((a, b) => a + b, 0) / prices.length || 0;
+                const variance = prices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / prices.length || 0;
+                return Math.sqrt(variance) / mean * 100 || 0;
+            }
+
+            function calculateAnnualizedVolatility(prices) {
+                if (prices.length < 2) return 0;
+                const dailyReturns = [];
+                for (let i = 1; i < prices.length; i++) {
+                    dailyReturns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
+                }
+                const meanReturn = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length || 0;
+                const variance = dailyReturns.reduce((a, b) => a + Math.pow(b - meanReturn, 2), 0) / dailyReturns.length || 0;
+                return Math.sqrt(variance) * Math.sqrt(365) * 100 || 0;
+            }
+
+            function calculateVolumeChange(volumes) {
+                if (volumes.length < 2) return 0;
+                const recentAvg = volumes.slice(-10).reduce((a, b) => a + b, 0) / 10 || 0;
+                const pastAvg = volumes.slice(0, 10).reduce((a, b) => a + b, 0) / 10 || 0;
+                return ((recentAvg - pastAvg) / pastAvg) * 100 || 0;
+            }
+
+            function calculateRSI(prices) {
+                if (prices.length < 14) return 0;
+                let gains = 0, losses = 0;
+                for (let i = 1; i < prices.length; i++) {
+                    const diff = prices[i] - prices[i - 1];
+                    if (diff > 0) gains += diff;
+                    else losses -= diff;
+                }
+                const avgGain = gains / 14 || 0;
+                const avgLoss = losses / 14 || 0;
+                const rs = avgGain / (avgLoss || 1);
+                return 100 - (100 / (1 + rs));
+            }
+
+            function calculateMACD(prices) {
+                const ema12 = calculateEMA(prices, 12);
+                const ema26 = calculateEMA(prices, 26);
+                const macd = ema12[ema12.length - 1] - ema26[ema26.length - 1] || 0;
+                const signal = calculateEMA(prices.slice(-9).map((_, i) => ema12[ema12.length - 9 + i] - ema26[ema12.length - 9 + i]), 9);
+                return { macd, signal: signal[signal.length - 1] || 0 };
+            }
+
+            function calculateEMA(prices, period) {
+                const k = 2 / (period + 1);
+                let ema = [prices[0] || 0];
+                for (let i = 1; i < prices.length; i++) {
+                    ema.push(prices[i] * k + ema[i - 1] * (1 - k));
+                }
+                return ema;
+            }
+
+            function calculateBollingerBands(prices) {
+                const period = 20;
+                if (prices.length < period) return { upper: 0, middle: 0, lower: 0 };
+                const sma = calculateEMA(prices.slice(-period), period);
+                const middle = sma[sma.length - 1] || 0;
+                const stdDev = Math.sqrt(prices.slice(-period).reduce((a, b) => a + Math.pow(b - middle, 2), 0) / period) || 0;
+                return {
+                    upper: middle + 2 * stdDev,
+                    middle: middle,
+                    lower: middle - 2 * stdDev
+                };
+            }
+
+            function calculateNewsSentiment() {
+                const positiveKeywords = ["rise", "bull", "increase", "approval", "growth"];
+                const negativeKeywords = ["fall", "bear", "decrease", "ban", "crash"];
+                let score = 0;
+                const newsTitles = [];
+                
+                const newsFeed = document.getElementById("news-feed");
+                const newsItems = newsFeed.getElementsByTagName("p");
+                for (let item of newsItems) {
+                    newsTitles.push(item.textContent.toLowerCase());
+                }
+
+                newsTitles.forEach(title => {
+                    positiveKeywords.forEach(word => {
+                        if (title.includes(word)) score += 1;
+                    });
+                    negativeKeywords.forEach(word => {
+                        if (title.includes(word)) score -= 1;
+                    });
+                });
+                return score;
+            }
+
+            function calculateDailyHighPrediction(data) {
+                const prices = data.map(d => d.y);
+                const volumes = data.map(d => d.volume);
+                const latestPrice = prices[prices.length - 1] || 0;
+                const shortTermVolatility = calculateVolatility(prices.slice(-20)) / 100;
+                const volumeChange = calculateVolumeChange(volumes);
+                const rsi = calculateRSI(prices.slice(-14));
+                const macd = calculateMACD(prices);
+                const bollinger = calculateBollingerBands(prices);
+                const newsSentimentScore = calculateNewsSentiment();
+
+                const trendFactor = (rsi > 50 || macd.macd > macd.signal) ? 1.5 : 0.5;
+                const volumeFactor = volumeChange > 0 ? 1 + (volumeChange / 100) * 0.1 : 1;
+                const bollingerFactor = latestPrice > bollinger.upper ? 1.1 : latestPrice < bollinger.lower ? 0.9 : 1;
+                const sentimentFactor = newsSentimentScore > 0 ? 1.05 : newsSentimentScore < 0 ? 0.95 : 1;
+
+                return latestPrice * (1 + shortTermVolatility * trendFactor * volumeFactor * bollingerFactor * sentimentFactor);
+            }
+
+            searchInput.addEventListener("input", async () => {
+                const query = searchInput.value.toLowerCase();
+                const filtered = allCoins.filter(coin =>
+                    coin.name.toLowerCase().includes(query) || coin.symbol.toLowerCase().includes(query)
+                );
+                displayCoins(filtered);
+            });
+
+            prevPageBtn.addEventListener("click", () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    fetchAllCoins(currentPage);
+                }
+            });
+
+            nextPageBtn.addEventListener("click", () => {
+                currentPage++;
+                fetchAllCoins(currentPage);
+            });
+
+            fetchAllCoins(currentPage);
+        });
+    </script>
+</body>
+</html>
