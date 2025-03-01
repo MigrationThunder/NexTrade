@@ -24,6 +24,9 @@
         .error-message { color: red; text-align: center; margin-top: 10px; }
         .coin-image { width: 24px; height: 24px; vertical-align: middle; }
         .pagination { margin-top: 20px; display: flex; justify-content: center; gap: 10px; }
+        #ai-chat { margin-top: 20px; padding: 15px; background-color: #e9ecef; border-radius: 5px; }
+        #ai-chat h6 { margin-bottom: 10px; }
+        #ai-chat-response { white-space: pre-wrap; }
         @media (max-width: 992px) { #coin-search { width: 50%; } #chart-container { height: 350px; } .table { font-size: 0.95rem; } }
         @media (max-width: 768px) { #coin-search { width: 70%; } #chart-container { height: 300px; } .modal-dialog { margin: 0; max-width: 100%; } .table { font-size: 0.9rem; } }
         @media (max-width: 576px) { header { padding: 10px; } h1 { font-size: 1.5rem; } #coin-search { width: 100%; margin-top: 10px; } .table { font-size: 0.85rem; } .table td:nth-child(5) { display: none; } #chart-container { height: 250px; } #analysis .col-md-4 { flex: 0 0 100%; max-width: 100%; margin-bottom: 15px; } }
@@ -101,10 +104,10 @@
                             <input type="url" id="news-url" class="form-control mb-2" placeholder="뉴스 URL 입력">
                             <button id="add-news" class="btn btn-primary">뉴스 추가</button>
                         </div>
-                        <!-- Cohere AI 추가 -->
-                        <div id="ai-assistant" class="mt-3">
-                            <button id="ai-ask-btn" class="btn btn-info">AI에게 물어보기</button>
-                            <div id="ai-response" class="alert alert-info mt-3" style="display: none;"></div>
+                        <!-- Cohere AI 채팅 분석 추가 -->
+                        <div id="ai-chat" class="mt-3">
+                            <h6>AI 분석 도우미</h6>
+                            <div id="ai-chat-response">분석 데이터를 로드 중입니다...</div>
                         </div>
                     </div>
                 </div>
@@ -146,8 +149,8 @@
                     },
                     body: JSON.stringify({
                         model: 'command-xlarge',
-                        prompt: `${context}\n암호화폐 관련 질문에 한국어로 답변해주세요: "${query}"`,
-                        max_tokens: 150,
+                        prompt: `${context}\n${query}`,
+                        max_tokens: 300,
                         temperature: 0.7
                     })
                 });
@@ -156,7 +159,7 @@
                 return data.generations[0].text.trim();
             } catch (error) {
                 console.error('Cohere AI 오류:', error);
-                return '죄송합니다. 답변을 생성할 수 없습니다.';
+                return '죄송합니다. 분석 데이터를 생성할 수 없습니다.';
             }
         }
 
@@ -311,7 +314,7 @@
 
                 try {
                     let historicalResponse;
-                    if (coinId !== "pi-network") { // Pi 코인은 Binance에 없으므로 제외
+                    if (coinId !== "pi-network") {
                         historicalResponse = await fetchWithRetry(
                             `https://api.binance.com/api/v3/klines?symbol=${symbol.toUpperCase()}USDT&interval=${timeInterval}&limit=${limit}`
                         );
@@ -376,45 +379,31 @@
                         document.getElementById("chart-container").innerHTML = "<p>차트 데이터를 가져올 수 없습니다. 이 코인은 Binance나 OKX에 상장되어 있지 않습니다.</p>";
                         document.getElementById("analysis").innerHTML = "<p>분석 데이터를 가져올 수 없습니다.</p>";
                         document.getElementById("prediction-text").innerHTML = "<p>예측 데이터를 생성할 수 없습니다.</p>";
-                        fetchNews(symbol);
-                        // Cohere AI로 기본 정보 제공
-                        const aiResponseDiv = document.getElementById("ai-response");
-                        aiResponseDiv.style.display = 'block';
-                        aiResponseDiv.textContent = "Pi 코인은 현재 주요 거래소에 상장되어 있지 않습니다. 추가 정보를 원하시면 'AI에게 물어보기'를 사용하세요.";
-                        return;
                     }
                 }
 
                 if (candlestickData.length > 0) {
                     updateCandleChart(candlestickData);
                     analyzeData(candlestickData);
-                    fetchNews(symbol);
                 }
+                fetchNews(symbol);
 
-                // Cohere AI 컨텍스트 기반 질문 처리
-                const askWithContext = async (query) => {
-                    const context = `
-                        코인: ${symbol.toUpperCase()}
-                        현재가: $${document.getElementById('current-price').textContent || 'N/A'}
-                        RSI: ${document.getElementById('rsi').textContent || 'N/A'}
-                        MACD: ${document.getElementById('macd').textContent || 'N/A'}
-                        변동성: ${document.getElementById('volatility').textContent || 'N/A'}
-                    `;
-                    return await askCohere(query, context);
-                };
+                // Cohere AI로 초보자 친화적 분석 생성
+                const aiChatResponse = document.getElementById("ai-chat-response");
+                const context Prompt = `
+                    당신은 암호화폐 전문가 AI입니다. 아래 제공된 데이터를 바탕으로 초보자도 쉽게 이해할 수 있도록 한국어로 설명해주세요. 복잡한 용어는 풀어서 설명하고, 투자에 대한 간단한 조언도 포함하세요.
 
-                // AI 버튼 이벤트 처리
-                const aiAskBtn = document.getElementById('ai-ask-btn');
-                const aiResponseDiv = document.getElementById('ai-response');
-                aiAskBtn.addEventListener('click', async () => {
-                    const query = prompt('코인에 대해 궁금한 점을 입력하세요:');
-                    if (query) {
-                        aiResponseDiv.style.display = 'block';
-                        aiResponseDiv.textContent = '답변을 생성 중입니다...';
-                        const answer = await askWithContext(query);
-                        aiResponseDiv.textContent = answer;
-                    }
-                });
+                    코인: ${symbol.toUpperCase()}
+                    현재가: $${document.getElementById("current-price").textContent || 'N/A'}
+                    24시간 변동률: ${document.getElementById("price-change").textContent || 'N/A'}
+                    단기 변동성 (20분): ${document.getElementById("volatility").textContent?.split('/')[0] || 'N/A'}
+                    장기 변동성 (30일 연율): ${document.getElementById("volatility").textContent?.split('/')[1] || 'N/A'}
+                    RSI (14분): ${document.getElementById("rsi").textContent || 'N/A'}
+                    MACD: ${document.getElementById("macd").textContent?.split(' (')[0] || 'N/A'} (Signal: ${document.getElementById("macd").textContent?.match(/Signal: (.*)\)/)?.[1] || 'N/A'})
+                    볼린저 밴드: 상단 $${document.getElementById("prediction-text").querySelector("p:nth-child(8)")?.textContent?.match(/상단 \$(.*?),/)?.[1] || 'N/A'}, 중간 $${document.getElementById("prediction-text").querySelector("p:nth-child(8)")?.textContent?.match(/중간 \$(.*?),/)?.[1] || 'N/A'}, 하단 $${document.getElementById("prediction-text").querySelector("p:nth-child(8)")?.textContent?.match(/하단 \$(.*)/)?.[1] || 'N/A'}
+                `;
+                const aiAnalysis = await askCohere('', contextPrompt);
+                aiChatResponse.textContent = aiAnalysis;
 
                 document.getElementById("time-interval").addEventListener("change", () => window.showAnalysis(coinId, symbol));
                 document.getElementById("add-news").addEventListener("click", () => {
